@@ -1,0 +1,1 @@
+import{createClient}from"@supabase/supabase-js";import{config,missingPublicConfig}from"../config";export const supabase=missingPublicConfig.length?null:createClient(config.supabaseUrl,config.supabaseKey);

@@ -1,0 +1,7 @@
+# Phase 6A recruiter assigned work
+
+Implements read-only recruiter endpoints for assigned jobs, assigned job detail, assigned applications, application detail, and application-bound 60-second CV signed access. Every route requires `require_recruiter` and derives its actor from `CurrentUser.user_id`. Current assignment is checked through `job_recruiters` for every scoped operation, so unassignment revokes access on the next request.
+
+Jobs use assignment visibility rather than Candidate open/future discovery, so assigned draft/open/closed and expired records remain reviewable. Application reads use exact `applications.cv_id` snapshots with safe candidate contact metadata and chronological stage history. Responses omit storage paths, notes, AI data, audits, automation data, and admin creator fields. No mutation, notes, AI access, transitions, or scheduling was added.
+
+Focused tests: 2 passed; complete backend suite: 175 passed; frontend production build: passed. Rollback-only live verification passed the R1/R2 assignment matrix, authenticated Recruiter RLS, exact CV-1 snapshot visibility (CV-2 unrelated), immediate unassignment revocation, reassignment restoration, and withdrawn historical visibility; no stale authorization cache or temporary data remained. Supabase is `ACTIVE_HEALTHY`; advisor findings are existing intentional deny-by-default internal RLS notices and informational unused indexes. The secret scan is clean and `backend/.env` remains ignored. Phase 6B notes and AI-summary access remain deferred.

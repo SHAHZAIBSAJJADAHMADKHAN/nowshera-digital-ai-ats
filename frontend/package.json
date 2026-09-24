@@ -1,0 +1,27 @@
+{
+  "name": "nowshera-digital-ai-ats-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test:recruiter-interview": "node --test src/recruiterInterview.test.js",
+    "test:admin-applications": "node --test src/adminApplicationView.test.js",
+    "test:security": "node --test src/frontendSecurity.test.js",
+    "test:auth-routing": "node --test src/authRouting.test.js",
+    "test:auth-context": "node --test src/authContextSource.test.js",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.117.1",
+    "lucide-react": "^1.47.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-router-dom": "^7.18.4"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.2",
+    "vite": "^7.1.7"
+  }
+}

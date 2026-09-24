@@ -1,0 +1,134 @@
+{
+  "name": "Nowshera Digital — Email Outbox Delivery",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual test trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-720, 120]
+    },
+    {
+      "parameters": { "rule": { "interval": [{ "field": "minutes", "minutesInterval": 5 }] } },
+      "id": "schedule-trigger",
+      "name": "Poll every 5 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-720, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.ATS_INTERNAL_API_BASE_URL + '/api/v1/internal/automation-events/claim'}}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Internal-Automation-Key", "value": "={{$env.INTERNAL_AUTOMATION_KEY}}" }] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"event_types\":[\"application_received\",\"interview_invitation\",\"application_hired\",\"application_rejected\"],\"limit\":10}",
+        "options": {}
+      },
+      "id": "claim-events",
+      "name": "Claim email events",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-480, 200]
+    },
+    {
+      "parameters": { "jsCode": "return ($json.events || []).map((event) => ({ json: event }));" },
+      "id": "explode-events",
+      "name": "Expand claimed events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-250, 200]
+    },
+    {
+      "parameters": { "rules": { "values": [
+        { "conditions": { "options": { "caseSensitive": true }, "conditions": [{ "leftValue": "={{$json.event_type}}", "rightValue": "application_received", "operator": { "type": "string", "operation": "equals" } }] }, "renameOutput": true, "outputKey": "Application Received" },
+        { "conditions": { "options": { "caseSensitive": true }, "conditions": [{ "leftValue": "={{$json.event_type}}", "rightValue": "interview_invitation", "operator": { "type": "string", "operation": "equals" } }] }, "renameOutput": true, "outputKey": "Interview Invitation" },
+        { "conditions": { "options": { "caseSensitive": true }, "conditions": [{ "leftValue": "={{$json.event_type}}", "rightValue": "application_hired", "operator": { "type": "string", "operation": "equals" } }] }, "renameOutput": true, "outputKey": "Hired" },
+        { "conditions": { "options": { "caseSensitive": true }, "conditions": [{ "leftValue": "={{$json.event_type}}", "rightValue": "application_rejected", "operator": { "type": "string", "operation": "equals" } }] }, "renameOutput": true, "outputKey": "Rejected" }
+      ] }, "options": { "fallbackOutput": "none" } },
+      "id": "route-events",
+      "name": "Route email event type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [-20, 200]
+    },
+    {
+      "parameters": { "jsCode": "const e = $json; const h = (v) => String(v ?? '').replace(/[&<>\"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\\\"':'&quot;'}[c])); return {json:{event_id:e.event_id,to:e.recipient_email,subject:`Application Received — ${e.job_title} | Nowshera Digital`,html:`<main style=\"font-family:Arial,sans-serif;color:#172554;line-height:1.5\"><h1>Application received</h1><p>Dear ${h(e.candidate_name)},</p><p>Thank you for applying for <strong>${h(e.job_title)}</strong> at Nowshera Digital. We have received your application and its current status is Applied.</p><p>Kind regards,<br>Nowshera Digital</p></main>`}};" },
+      "id": "prepare-received",
+      "name": "Prepare Application Received email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 20]
+    },
+    {
+      "parameters": { "jsCode": "const e = $json; const h = (v) => String(v ?? '').replace(/[&<>\"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\\\"':'&quot;'}[c])); const when = new Date(e.interview_starts_at).toLocaleString(); const place = e.interview_meeting_link ? `Join online: <a href=\"${h(e.interview_meeting_link)}\">meeting link</a>` : `Location: ${h(e.interview_location)}`; return {json:{event_id:e.event_id,to:e.recipient_email,subject:`Interview Invitation — ${e.job_title} | Nowshera Digital`,html:`<main style=\"font-family:Arial,sans-serif;color:#172554;line-height:1.5\"><h1>Interview invitation</h1><p>Dear ${h(e.candidate_name)},</p><p>You are invited to interview for <strong>${h(e.job_title)}</strong> at Nowshera Digital.</p><p><strong>Date and time:</strong> ${h(when)}<br>${place}</p><p>Kind regards,<br>Nowshera Digital</p></main>`}};" },
+      "id": "prepare-interview",
+      "name": "Prepare Interview Invitation email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 140]
+    },
+    {
+      "parameters": { "jsCode": "const e = $json; const h = (v) => String(v ?? '').replace(/[&<>\"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\\\"':'&quot;'}[c])); return {json:{event_id:e.event_id,to:e.recipient_email,subject:`Application Update — ${e.job_title} | Nowshera Digital`,html:`<main style=\"font-family:Arial,sans-serif;color:#172554;line-height:1.5\"><h1>Application update</h1><p>Dear ${h(e.candidate_name)},</p><p>Congratulations. Your application for <strong>${h(e.job_title)}</strong> at Nowshera Digital has been confirmed as Hired.</p><p>Kind regards,<br>Nowshera Digital</p></main>`}};" },
+      "id": "prepare-hired",
+      "name": "Prepare Hired email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 260]
+    },
+    {
+      "parameters": { "jsCode": "const e = $json; const h = (v) => String(v ?? '').replace(/[&<>\"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\\\"':'&quot;'}[c])); return {json:{event_id:e.event_id,to:e.recipient_email,subject:`Application Update — ${e.job_title} | Nowshera Digital`,html:`<main style=\"font-family:Arial,sans-serif;color:#172554;line-height:1.5\"><h1>Application update</h1><p>Dear ${h(e.candidate_name)},</p><p>Thank you for your interest in <strong>${h(e.job_title)}</strong> at Nowshera Digital. Your application status has been updated.</p><p>We appreciate the time you invested in your application.</p><p>Kind regards,<br>Nowshera Digital</p></main>`}};" },
+      "id": "prepare-rejected",
+      "name": "Prepare Rejected email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 380]
+    },
+    {
+      "parameters": { "resource": "message", "operation": "send", "sendTo": "={{$json.to}}", "subject": "={{$json.subject}}", "emailType": "html", "message": "={{$json.html}}", "options": {} },
+      "id": "send-email",
+      "name": "Send candidate email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [520, 200],
+      "onError": "continueErrorOutput",
+      "credentials": { "gmailOAuth2": { "name": "Nowshera Digital Gmail (configure after import)" } }
+    },
+    {
+      "parameters": { "method": "POST", "url": "={{$env.ATS_INTERNAL_API_BASE_URL + '/api/v1/internal/automation-events/' + $json.event_id + '/complete'}}", "sendHeaders": true, "headerParameters": { "parameters": [{ "name": "X-Internal-Automation-Key", "value": "={{$env.INTERNAL_AUTOMATION_KEY}}" }] }, "options": {} },
+      "id": "complete-event",
+      "name": "Complete delivered event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [760, 160]
+    },
+    {
+      "parameters": { "method": "POST", "url": "={{$env.ATS_INTERNAL_API_BASE_URL + '/api/v1/internal/automation-events/' + $json.event_id + '/fail'}}", "sendHeaders": true, "headerParameters": { "parameters": [{ "name": "X-Internal-Automation-Key", "value": "={{$env.INTERNAL_AUTOMATION_KEY}}" }] }, "sendBody": true, "specifyBody": "json", "jsonBody": "={\"error\":\"Email provider delivery failed; inspect protected n8n execution logs.\"}", "options": {} },
+      "id": "fail-event",
+      "name": "Record safe delivery failure",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [760, 300]
+    }
+  ],
+  "connections": {
+    "Manual test trigger": { "main": [[{ "node": "Claim email events", "type": "main", "index": 0 }]] },
+    "Poll every 5 minutes": { "main": [[{ "node": "Claim email events", "type": "main", "index": 0 }]] },
+    "Claim email events": { "main": [[{ "node": "Expand claimed events", "type": "main", "index": 0 }]] },
+    "Expand claimed events": { "main": [[{ "node": "Route email event type", "type": "main", "index": 0 }]] },
+    "Route email event type": { "main": [[{ "node": "Prepare Application Received email", "type": "main", "index": 0 }], [{ "node": "Prepare Interview Invitation email", "type": "main", "index": 0 }], [{ "node": "Prepare Hired email", "type": "main", "index": 0 }], [{ "node": "Prepare Rejected email", "type": "main", "index": 0 }]] },
+    "Prepare Application Received email": { "main": [[{ "node": "Send candidate email", "type": "main", "index": 0 }]] },
+    "Prepare Interview Invitation email": { "main": [[{ "node": "Send candidate email", "type": "main", "index": 0 }]] },
+    "Prepare Hired email": { "main": [[{ "node": "Send candidate email", "type": "main", "index": 0 }]] },
+    "Prepare Rejected email": { "main": [[{ "node": "Send candidate email", "type": "main", "index": 0 }]] },
+    "Send candidate email": { "main": [[{ "node": "Complete delivered event", "type": "main", "index": 0 }], [{ "node": "Record safe delivery failure", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "8b-email-outbox-v1",
+  "meta": { "templateCredsSetupCompleted": false },
+  "tags": []
+}

@@ -1,0 +1,113 @@
+{
+  "name": "Nowshera Digital — AI CV Summary Worker",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual test trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-720, 120]
+    },
+    {
+      "parameters": { "rule": { "interval": [{ "field": "minutes", "minutesInterval": 5 }] } },
+      "id": "schedule-trigger",
+      "name": "Poll every 5 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-720, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.ATS_INTERNAL_API_BASE_URL + '/api/v1/internal/automation-events/ai/claim'}}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Internal-Automation-Key", "value": "={{$env.INTERNAL_AUTOMATION_KEY}}" }] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"limit\":10}",
+        "options": {}
+      },
+      "id": "claim-ai-events",
+      "name": "Claim AI Summary Events",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-480, 200]
+    },
+    {
+      "parameters": { "jsCode": "return ($json.events || []).map((event) => ({ json: { event_id: event.event_id, application_id: event.application_id }, pairedItem: { item: 0 } }));" },
+      "id": "expand-ai-events",
+      "name": "Expand Claimed AI Events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-240, 200]
+    },
+    {
+      "parameters": { "jsCode": "return items.map((item, index) => ({ json: { event_id: item.json.event_id, application_id: item.json.application_id }, pairedItem: { item: index } }));" },
+      "id": "prepare-ai-process-request",
+      "name": "Prepare AI Process Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [0, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.ATS_INTERNAL_API_BASE_URL + '/api/v1/internal/ai-summaries/' + $json.application_id + '/process'}}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Internal-Automation-Key", "value": "={{$env.INTERNAL_AUTOMATION_KEY}}" }] },
+        "options": {}
+      },
+      "id": "process-ai-summary",
+      "name": "Process AI Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [250, 200],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.ATS_INTERNAL_API_BASE_URL + '/api/v1/internal/automation-events/' + $('Prepare AI Process Request').item.json.event_id + '/complete'}}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Internal-Automation-Key", "value": "={{$env.INTERNAL_AUTOMATION_KEY}}" }] },
+        "options": {}
+      },
+      "id": "complete-ai-event",
+      "name": "Complete AI Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [520, 120]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.ATS_INTERNAL_API_BASE_URL + '/api/v1/internal/automation-events/' + $('Prepare AI Process Request').item.json.event_id + '/fail'}}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Internal-Automation-Key", "value": "={{$env.INTERNAL_AUTOMATION_KEY}}" }] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"error\":\"AI worker processing request failed; inspect protected n8n execution logs.\"}",
+        "options": {}
+      },
+      "id": "fail-ai-event",
+      "name": "Record AI Worker Failure",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [520, 300]
+    }
+  ],
+  "connections": {
+    "Manual test trigger": { "main": [[{ "node": "Claim AI Summary Events", "type": "main", "index": 0 }]] },
+    "Poll every 5 minutes": { "main": [[{ "node": "Claim AI Summary Events", "type": "main", "index": 0 }]] },
+    "Claim AI Summary Events": { "main": [[{ "node": "Expand Claimed AI Events", "type": "main", "index": 0 }]] },
+    "Expand Claimed AI Events": { "main": [[{ "node": "Prepare AI Process Request", "type": "main", "index": 0 }]] },
+    "Prepare AI Process Request": { "main": [[{ "node": "Process AI Summary", "type": "main", "index": 0 }]] },
+    "Process AI Summary": { "main": [[{ "node": "Complete AI Event", "type": "main", "index": 0 }], [{ "node": "Record AI Worker Failure", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "9b2-ai-summary-worker-v1",
+  "meta": { "templateCredsSetupCompleted": false },
+  "tags": []
+}
