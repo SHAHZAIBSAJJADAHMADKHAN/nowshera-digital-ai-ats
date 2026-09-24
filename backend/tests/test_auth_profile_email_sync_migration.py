@@ -2,7 +2,7 @@ from pathlib import Path
 
 
 def test_auth_email_sync_trigger_is_narrow_and_does_not_provision_profiles() -> None:
-    sql = (Path(__file__).parents[2] / "supabase/migrations/20260925110000_sync_profile_email_from_auth.sql").read_text(encoding="utf-8").lower()
+    sql = (Path(__file__).parents[2] / "supabase/migrations/20260924210924_sync_profile_email_from_auth.sql").read_text(encoding="utf-8").lower()
 
     assert "after update of email on auth.users" in sql
     assert "when (old.email is distinct from new.email)" in sql
@@ -16,7 +16,7 @@ def test_auth_email_sync_trigger_is_narrow_and_does_not_provision_profiles() -> 
 
 
 def test_auth_email_sync_function_is_not_browser_callable() -> None:
-    sql = (Path(__file__).parents[2] / "supabase/migrations/20260925110000_sync_profile_email_from_auth.sql").read_text(encoding="utf-8").lower()
+    sql = (Path(__file__).parents[2] / "supabase/migrations/20260924210924_sync_profile_email_from_auth.sql").read_text(encoding="utf-8").lower()
 
     assert "security definer" in sql
     assert "set search_path = ''" in sql

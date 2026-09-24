@@ -142,7 +142,7 @@ def test_unknown_or_non_recruiter_targets_are_not_mutated(role: str) -> None:
 
 
 def test_reactivation_migration_preserves_identity_and_relationships() -> None:
-    sql = (Path(__file__).parents[2] / "supabase/migrations/20260925120000_admin_recruiter_edit_and_reactivate.sql").read_text(encoding="utf-8").lower()
+    sql = (Path(__file__).parents[2] / "supabase/migrations/20260924212629_admin_recruiter_edit_and_reactivate.sql").read_text(encoding="utf-8").lower()
     assert "create or replace function public.reactivate_recruiter" in sql
     assert "set is_active = true" in sql
     assert "for update" in sql
@@ -155,7 +155,7 @@ def test_reactivation_migration_preserves_identity_and_relationships() -> None:
 
 
 def test_recruiter_update_migration_changes_only_safe_fields_and_is_service_only() -> None:
-    sql = (Path(__file__).parents[2] / "supabase/migrations/20260925120000_admin_recruiter_edit_and_reactivate.sql").read_text(encoding="utf-8").lower()
+    sql = (Path(__file__).parents[2] / "supabase/migrations/20260924212629_admin_recruiter_edit_and_reactivate.sql").read_text(encoding="utf-8").lower()
     assert "set full_name = v_full_name" in sql
     assert "phone = v_phone" in sql
     assert "recruiter_profile_updated" in sql

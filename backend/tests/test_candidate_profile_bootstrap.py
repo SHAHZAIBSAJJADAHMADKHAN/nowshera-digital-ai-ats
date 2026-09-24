@@ -104,7 +104,7 @@ def test_bootstrap_endpoint_derives_identity_from_the_verified_principal() -> No
 
 
 def test_bootstrap_migration_is_service_only_and_does_not_create_auth_insert_trigger() -> None:
-    sql = (Path(__file__).parents[2] / "supabase/migrations/20260925100000_bootstrap_candidate_profile.sql").read_text(encoding="utf-8").lower()
+    sql = (Path(__file__).parents[2] / "supabase/migrations/20260924210052_bootstrap_candidate_profile.sql").read_text(encoding="utf-8").lower()
     assert "on conflict (id) do nothing" in sql
     assert "grant execute on function public.bootstrap_candidate_profile" in sql
     assert "to service_role" in sql
