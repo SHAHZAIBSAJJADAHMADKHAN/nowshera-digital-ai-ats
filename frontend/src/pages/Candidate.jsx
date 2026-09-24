@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { candidateService as S } from "../services/candidateService";
+import { supabase } from "../lib/supabase";
+import { hasEmailChange, profilePatchFromDraft } from "../profileEdit";
 
 const fmt = (d) =>
   d
@@ -38,6 +40,15 @@ function Load({ children = "Loading candidate workspace…" }) {
 
 function Err({ children, tone = "danger" }) {
   return <p className={`candidate-alert candidate-alert--${tone}`} role={tone === "danger" ? "alert" : "status"}>{children}</p>;
+}
+
+function profileSaveError(error) {
+  const message = error?.message || "";
+  if (error?.status === 401 || error?.status === 403) return "Your session has expired. Sign in again to update your profile.";
+  if (/already|exists|duplicate/i.test(message)) return "This email address is already in use.";
+  if (/email|valid/i.test(message)) return "Enter a valid email address.";
+  if (error?.status === 422) return "Check your full name and phone number, then try again.";
+  return "We could not save your profile. Please try again.";
 }
 
 function Empty({ icon: Icon = FileText, title, children, action }) {
@@ -166,9 +177,13 @@ export function CandidateDashboard() {
 }
 
 export function CandidateProfile() {
-  const { token } = useAuth();
+  const { token, refreshProfile } = useAuth();
   const [profile, setProfile] = useState();
   const [err, setErr] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState();
+  const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState(null);
 
   useEffect(() => {
     let alive = true;
@@ -181,16 +196,95 @@ export function CandidateProfile() {
   if (err) return <Err>{err}</Err>;
   if (!profile) return <Load />;
 
+  const beginEditing = () => {
+    setDraft({ full_name: profile.full_name, email: profile.email, phone: profile.phone || "" });
+    setFeedback(null);
+    setEditing(true);
+  };
+
+  const cancelEditing = () => {
+    setDraft({ full_name: profile.full_name, email: profile.email, phone: profile.phone || "" });
+    setFeedback(null);
+    setEditing(false);
+  };
+
+  const reloadProfile = async () => {
+    const nextProfile = await S.profile(token);
+    setProfile(nextProfile);
+    return nextProfile;
+  };
+
+  const save = async (event) => {
+    event.preventDefault();
+    if (saving || !draft) return;
+    setSaving(true);
+    setFeedback(null);
+
+    let profileSaved = false;
+    try {
+      const patch = profilePatchFromDraft(profile, draft);
+      if (Object.keys(patch).length) {
+        await S.updateProfile(token, patch);
+        profileSaved = true;
+        await reloadProfile();
+        await refreshProfile().catch(() => {});
+      }
+
+      if (hasEmailChange(profile, draft)) {
+        const { error } = await supabase.auth.updateUser(
+          { email: draft.email.trim() },
+          { emailRedirectTo: `${window.location.origin}/candidate/profile` },
+        );
+        if (error) throw error;
+        await reloadProfile().catch(() => {});
+        setFeedback({ tone: "success", text: profileSaved
+          ? "Your profile changes were saved. Email change requested — check your email to confirm the new address."
+          : "Email change requested — check your email to confirm the new address." });
+      } else if (profileSaved) {
+        setFeedback({ tone: "success", text: "Your profile changes were saved." });
+      } else {
+        setFeedback({ tone: "success", text: "No profile changes to save." });
+      }
+      setEditing(false);
+    } catch (error) {
+      const message = profileSaveError(error);
+      setFeedback({
+        tone: "danger",
+        text: profileSaved
+          ? `Your name and phone were saved, but we could not request the email change. ${message}`
+          : message,
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <>
       <PageHead eyebrow="Your profile" title="Personal details">
-        This read-only profile is the identity attached to your applications.
+        Keep the contact details attached to your applications current.
       </PageHead>
       <section className="candidate-panel candidate-form-panel">
-        <label>Full name<input value={profile.full_name || ""} readOnly /></label>
-        <label>Email<input value={profile.email || ""} readOnly /></label>
-        <label>Phone<input value={profile.phone || "Not provided"} readOnly /></label>
-        <p><ShieldCheck size={16} /> Profile editing is not enabled in this workspace yet.</p>
+        {editing ? (
+          <form className="candidate-profile-form" onSubmit={save}>
+            <label>Full name<input required value={draft.full_name} onChange={(event) => setDraft({ ...draft, full_name: event.target.value })} disabled={saving} /></label>
+            <label>Email<input type="email" required value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} disabled={saving} /></label>
+            <label>Phone<input value={draft.phone} onChange={(event) => setDraft({ ...draft, phone: event.target.value })} disabled={saving} /></label>
+            <p><ShieldCheck size={16} /> Email changes require confirmation. Your current email remains visible until confirmation is complete.</p>
+            <div className="candidate-profile-actions">
+              <button className="button" type="submit" disabled={saving}>{saving ? "Saving…" : "Save Changes"}</button>
+              <button className="link-button" type="button" onClick={cancelEditing} disabled={saving}>Cancel</button>
+            </div>
+          </form>
+        ) : (
+          <>
+            <label>Full name<input value={profile.full_name || ""} readOnly /></label>
+            <label>Email<input value={profile.email || ""} readOnly /></label>
+            <label>Phone<input value={profile.phone || "Not provided"} readOnly /></label>
+            <button className="button" type="button" onClick={beginEditing}>Edit Profile</button>
+          </>
+        )}
+        {feedback && <Err tone={feedback.tone}>{feedback.text}</Err>}
       </section>
     </>
   );

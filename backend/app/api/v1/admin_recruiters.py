@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from app.core.authorization import CurrentUser, require_admin
-from app.schemas.admin_recruiters import RecruiterCreate
+from app.schemas.admin_recruiters import RecruiterCreate, RecruiterProfileResponse, RecruiterReactivationResponse, RecruiterUpdate
 from app.services.admin_recruiters import AdminRecruiterService
 from app.integrations.supabase_admin import get_supabase_admin_client
 
@@ -12,3 +12,7 @@ def list_recruiters(_:CurrentUser=Depends(require_admin),service:AdminRecruiterS
 def create_recruiter(data:RecruiterCreate,admin:CurrentUser=Depends(require_admin),service:AdminRecruiterService=Depends(get_service)): return service.create(admin.user_id,data)
 @router.post('/{recruiter_id}/deactivate')
 def deactivate_recruiter(recruiter_id:str,admin:CurrentUser=Depends(require_admin),service:AdminRecruiterService=Depends(get_service)): return service.deactivate(admin.user_id,recruiter_id)
+@router.patch('/{recruiter_id}',response_model=RecruiterProfileResponse)
+def update_recruiter(recruiter_id:str,data:RecruiterUpdate,admin:CurrentUser=Depends(require_admin),service:AdminRecruiterService=Depends(get_service)): return service.update(admin.user_id,recruiter_id,data)
+@router.post('/{recruiter_id}/reactivate',response_model=RecruiterReactivationResponse)
+def reactivate_recruiter(recruiter_id:str,admin:CurrentUser=Depends(require_admin),service:AdminRecruiterService=Depends(get_service)): return service.reactivate(admin.user_id,recruiter_id)

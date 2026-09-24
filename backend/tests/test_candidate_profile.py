@@ -137,6 +137,15 @@ def test_candidate_updates_only_allowed_fields_using_authenticated_actor(client_
     assert update.model_fields_set == {"full_name", "phone"}
 
 
+def test_candidate_profile_update_trims_name_and_phone(client_factory) -> None:
+    client, profiles, _ = client_factory()
+    response = client.patch("/api/v1/candidate/profile", json={"full_name": "  Updated Name  ", "phone": " +923009999999 "})
+    assert response.status_code == 200
+    _, (_, update) = profiles.calls[0]
+    assert update.full_name == "Updated Name"
+    assert update.phone == "+923009999999"
+
+
 @pytest.mark.parametrize(
     "payload",
     [

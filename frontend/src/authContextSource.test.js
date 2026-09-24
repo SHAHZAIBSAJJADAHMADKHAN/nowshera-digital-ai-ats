@@ -8,17 +8,23 @@ const here = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(resolve(here, "context/AuthContext.jsx"), "utf8");
 
 test("auth state callback defers profile resolution outside the Supabase callback tick", () => {
-  assert.match(source, /setTimeout\(\(\)=>\{timer\.current=null;resolve\(s\)\.catch\(\(\)=>\{\}\)\},0\)/);
-  assert.match(source, /onAuthStateChange\(\(_,s\)=>\{deferResolve\(s\)\}\)/);
+  assert.match(source, /setTimeout\(\(\) => \{\s*timer\.current = null;\s*resolve\(s\)\.catch\(\(\) => \{\}\);\s*\}, 0\)/);
+  assert.match(source, /onAuthStateChange\(\(_, s\) => \{\s*deferResolve\(s\);\s*\}\)/);
 });
 
 test("login starts profile resolution without blocking the sign-in result", () => {
-  assert.match(source, /signIn:async\(email,password\)=>\{const result=await supabase\.auth\.signInWithPassword/);
+  assert.match(source, /signIn: async \(email, password\) => \{\s*const result = await supabase\.auth\.signInWithPassword/);
   assert.doesNotMatch(source, /await resolve\(result\.data\.session\)/);
-  assert.match(source, /deferResolve\(result\.data\.session\).*return result/);
+  assert.match(source, /deferResolve\(result\.data\.session\);\s*\}\s*return result;/);
 });
 
 test("same-user refresh keeps the resolved profile while it revalidates", () => {
-  assert.match(source, /const sameUser=isSameResolvedUser\(resolvedUserId\.current,s\);/);
-  assert.match(source, /if\(!sameUser\)\{resolvedUserId\.current=null;setLoading\(true\);setProfile\(null\)\}/);
+  assert.match(source, /const sameUser = isSameResolvedUser\(resolvedUserId\.current, s\);/);
+  assert.match(source, /if \(!sameUser\) \{\s*resolvedUserId\.current = null;\s*setLoading\(true\);\s*setProfile\(null\);/);
+});
+
+test("a missing ATS profile bootstraps only after authenticated profile resolution is denied", () => {
+  assert.match(source, /if \(error\.status !== 403\) throw error;/);
+  assert.match(source, /api\("\/candidate\/profile\/bootstrap", \{ token: s\.access_token, method: "POST" \}\)/);
+  assert.match(source, /nextProfile = await api\("\/auth\/me", \{ token: s\.access_token \}\);/);
 });

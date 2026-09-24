@@ -15,7 +15,12 @@ class SupabaseAdminClient:
     def invite_recruiter(self,email): return self._request('POST','/auth/v1/invite',params={'redirect_to':'http://localhost:5173/set-password'},json={'email':email}).json()
     def provision(self,admin_id,recruiter_id,name,email,phone): self._request('POST','/rest/v1/rpc/provision_recruiter_profile',json={'p_admin_id':admin_id,'p_recruiter_id':recruiter_id,'p_full_name':name,'p_email':email,'p_phone':phone})
     def deactivate(self,admin_id,recruiter_id): return self._request('POST','/rest/v1/rpc/deactivate_recruiter',json={'p_admin_id':admin_id,'p_recruiter_id':recruiter_id}).json()
-    def get_recruiter(self,recruiter_id): return self._request('GET','/rest/v1/profiles',params={'id':f'eq.{recruiter_id}','select':'id,full_name,email,phone,role,is_active,created_at'}).json()[0]
+    def reactivate(self,admin_id,recruiter_id): return self._request('POST','/rest/v1/rpc/reactivate_recruiter',json={'p_admin_id':admin_id,'p_recruiter_id':recruiter_id}).json()
+    def update_recruiter(self,admin_id,recruiter_id,full_name,phone): self._request('POST','/rest/v1/rpc/update_recruiter_profile',json={'p_admin_id':admin_id,'p_recruiter_id':recruiter_id,'p_full_name':full_name,'p_phone':phone})
+    def get_recruiter(self,recruiter_id):
+        rows=self._request('GET','/rest/v1/profiles',params={'id':f'eq.{recruiter_id}','select':'id,full_name,email,phone,role,is_active,created_at'}).json()
+        if not rows: raise LookupError('Recruiter not found')
+        return rows[0]
     def delete_auth_user(self,user_id): self._request('DELETE',f'/auth/v1/admin/users/{user_id}')
     def list_jobs(self,limit,offset):
         return self._request('GET','/rest/v1/jobs',params={'select':'id,title,department,location,job_type,description,requirements,application_deadline,openings,status,created_by,closed_at,created_at,updated_at','limit':limit,'offset':offset,'order':'created_at.desc'}).json()
@@ -43,6 +48,13 @@ class SupabaseAdminClient:
         profiles=self._request('GET','/rest/v1/profiles',params={'id':f'eq.{candidate_id}','role':'eq.candidate','select':'id,full_name,email,phone,created_at,updated_at'}).json()
         if not profiles: raise LookupError('Candidate profile not found')
         return profiles[0]
+    def get_profile_identity(self,user_id):
+        profiles=self._request('GET','/rest/v1/profiles',params={'id':f'eq.{user_id}','select':'id,role'}).json()
+        return profiles[0] if profiles else None
+    def get_auth_user(self,user_id):
+        return self._request('GET',f'/auth/v1/admin/users/{user_id}').json()
+    def bootstrap_candidate_profile(self,candidate_id,full_name,email):
+        self._request('POST','/rest/v1/rpc/bootstrap_candidate_profile',json={'p_candidate_id':candidate_id,'p_full_name':full_name,'p_email':email})
     def update_candidate_profile(self,candidate_id,data):
         response=self._request('PATCH','/rest/v1/profiles',params={'id':f'eq.{candidate_id}','role':'eq.candidate'},json=data)
         if response.status_code != 204: raise ValueError('Candidate profile update failed')
