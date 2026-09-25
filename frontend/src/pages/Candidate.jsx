@@ -322,13 +322,15 @@ export function CandidateCV() {
 
   const upload = async (e) => {
     e.preventDefault();
+    const form = e.currentTarget;
     if (!file) return setMsg("Choose a PDF to upload.");
     if (file.type !== "application/pdf" || file.size > 2097152) return setMsg("Choose a PDF no larger than 2 MiB.");
+    setMsg("");
     try {
       await S.uploadCv(token, file);
       setMsg("CV uploaded successfully.");
       setFile(null);
-      e.currentTarget.reset();
+      form.reset();
       await load();
     } catch (x) {
       setMsg(x.message);
