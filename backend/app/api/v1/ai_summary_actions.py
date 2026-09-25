@@ -6,7 +6,7 @@ from app.core.automation_auth import require_internal_automation
 from app.core.config import Settings, get_settings
 from app.core.authorization import CurrentUser, require_admin, require_recruiter
 from app.integrations.supabase_admin import SupabaseAdminClient, get_supabase_admin_client
-from app.schemas.recruiter_ai_summary import AIResultIngestionRequest, RecruiterAISummaryResponse
+from app.schemas.recruiter_ai_summary import AIContextResponse, AIResultIngestionRequest, RecruiterAISummaryResponse
 from app.services.ai_summary_actions import AdminAISummaryService, AISummaryActionsService, AISummaryRetryConflictError, AISummaryRetryOperationError
 from app.services.ai_processing import AIProcessingOperationError, AIProcessingService, build_ai_processing_service
 from app.services.recruiter_ai_summary import RecruiterAISummaryNotFoundError, RecruiterAISummaryOperationError
@@ -56,6 +56,15 @@ def ingest_result(application_id: UUID, data: AIResultIngestionRequest, service:
         raise HTTPException(status.HTTP_409_CONFLICT, "AI summary result cannot be saved") from error
     except AISummaryRetryOperationError as error:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "AI summary service is unavailable") from error
+
+
+@internal_router.post("/{application_id}/context", response_model=AIContextResponse)
+def get_context(application_id: UUID, service: AIProcessingService = Depends(get_processing_service)) -> AIContextResponse:
+    """Return the existing safe prompt to the authenticated automation worker only."""
+    try:
+        return service.prepare_context(application_id)
+    except AIProcessingOperationError as error:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "AI summary context is unavailable") from error
 
 
 @internal_router.post("/{application_id}/process", status_code=status.HTTP_204_NO_CONTENT)

@@ -8,7 +8,7 @@ from app.api.v1.ai_summary_actions import get_actions, get_admin_service, get_pr
 from app.core.config import Settings, get_settings
 from app.core.authorization import CurrentUser, get_current_user
 from app.main import app
-from app.schemas.recruiter_ai_summary import RecruiterAISummaryResponse
+from app.schemas.recruiter_ai_summary import AIContextResponse, RecruiterAISummaryResponse
 
 ACTOR = "11111111-1111-1111-1111-111111111111"
 APP = UUID("22222222-2222-2222-2222-222222222222")
@@ -28,6 +28,13 @@ class Admin:
 class Processor:
     def __init__(self): self.processed=[]
     def process(self, application): self.processed.append(application)
+
+
+class ContextProcessor:
+    def __init__(self): self.requested=[]
+    def prepare_context(self, application):
+        self.requested.append(application)
+        return AIContextResponse(application_id=application, prompt="safe prompt with <cv_untrusted_data>exact CV</cv_untrusted_data>")
 
 
 @pytest.fixture(autouse=True)
@@ -77,6 +84,28 @@ def test_browser_jwt_cannot_invoke_trusted_processing_and_key_can():
     assert processor.processed == []
     assert c.post(path, headers={"X-Internal-Automation-Key":"synthetic-key"}).status_code == 204
     assert processor.processed == [APP]
+
+
+def test_internal_context_returns_only_prepared_prompt_for_matching_application():
+    c, _ = client(); processor = ContextProcessor()
+    app.dependency_overrides[get_settings] = lambda: Settings(internal_automation_key="synthetic-key")
+    app.dependency_overrides[get_processing_service] = lambda: processor
+    response = c.post(f"/api/v1/internal/ai-summaries/{APP}/context", headers={"X-Internal-Automation-Key": "synthetic-key"})
+    assert response.status_code == 200
+    assert response.json() == {"application_id": str(APP), "prompt": "safe prompt with <cv_untrusted_data>exact CV</cv_untrusted_data>"}
+    assert processor.requested == [APP]
+    for secret_name in ("service_role", "gemini", "internal_automation_key", "storage_path"):
+        assert secret_name not in response.json()
+
+
+@pytest.mark.parametrize("headers", [{}, {"X-Internal-Automation-Key": "wrong-key"}, {"Authorization": "Bearer browser"}])
+def test_internal_context_rejects_missing_invalid_or_browser_authentication(headers):
+    c, _ = client(); processor = ContextProcessor()
+    app.dependency_overrides[get_settings] = lambda: Settings(internal_automation_key="synthetic-key")
+    app.dependency_overrides[get_processing_service] = lambda: processor
+    response = c.post(f"/api/v1/internal/ai-summaries/{APP}/context", headers=headers)
+    assert response.status_code == 401
+    assert processor.requested == []
 
 
 @pytest.mark.parametrize("role,expected",[("recruiter",204),("admin",204),("candidate",403)])

@@ -10,6 +10,7 @@ from app.ai.gemini import GeminiConfigurationError, GeminiProvider, GeminiProvid
 from app.ai.pdf_extraction import PDFExtractionError, extract_pdf_text
 from app.ai.summary_contract import AIContractError, build_ai_summary_prompt, parse_provider_summary
 from app.core.config import Settings
+from app.schemas.recruiter_ai_summary import AIContextResponse
 from app.services.candidate_cvs import MAX_CV_BYTES
 
 logger = logging.getLogger(__name__)
@@ -34,14 +35,27 @@ class AIProcessingService:
         except (LookupError, KeyError, TypeError, ValueError, httpx.HTTPError) as error:
             raise AIProcessingOperationError("AI work item is unavailable") from error
 
+    def prepare_context(self, application_id: UUID) -> AIContextResponse:
+        """Resolve the immutable CV snapshot and build the existing safe prompt."""
+        item = self.resolve_work_item(application_id)
+        try:
+            content = self.client.download_candidate_cv(item.cv_storage_path)
+            if not isinstance(content, bytes) or len(content) != item.cv_file_size_bytes:
+                raise PDFExtractionError("CV object failed validation")
+            prompt = build_ai_summary_prompt(
+                job_title=item.job_title,
+                job_requirements=item.job_requirements,
+                cv_text=extract_pdf_text(content),
+            )
+            return AIContextResponse(application_id=item.application_id, prompt=prompt)
+        except (PDFExtractionError, KeyError, TypeError, ValueError, httpx.HTTPError) as error:
+            raise AIProcessingOperationError("AI context is unavailable") from error
+
     def process(self, application_id: UUID) -> None:
         try:
-            item = self.resolve_work_item(application_id)
-            content = self.client.download_candidate_cv(item.cv_storage_path)
-            if not isinstance(content, bytes) or len(content) != item.cv_file_size_bytes: raise PDFExtractionError("CV object failed validation")
-            prompt = build_ai_summary_prompt(job_title=item.job_title, job_requirements=item.job_requirements, cv_text=extract_pdf_text(content))
-            summary = parse_provider_summary(self.provider.generate_summary(prompt))
-            self.client.save_ai_summary_result(item.application_id, "completed", summary.profile_summary, summary.requirements_analysis.requirements_mentioned, summary.requirements_analysis.requirements_not_found, summary.interview_questions, None)
+            context = self.prepare_context(application_id)
+            summary = parse_provider_summary(self.provider.generate_summary(context.prompt))
+            self.client.save_ai_summary_result(str(context.application_id), "completed", summary.profile_summary, summary.requirements_analysis.requirements_mentioned, summary.requirements_analysis.requirements_not_found, summary.interview_questions, None)
         except Exception as error:
             # Only category labels are logged: never prompts, CV/provider content, or credentials.
             logger.warning("AI summary processing handled failure category=%s", self._failure_category(error))

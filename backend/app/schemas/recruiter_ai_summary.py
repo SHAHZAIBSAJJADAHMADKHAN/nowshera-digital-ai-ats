@@ -31,6 +31,13 @@ class AICompletedSummary(BaseModel):
     interview_questions: list[str] = Field(min_length=3, max_length=3)
 
 
+class AIContextResponse(BaseModel):
+    """Prepared prompt available only to the trusted automation worker."""
+
+    application_id: UUID
+    prompt: str
+
+
 class AIResultIngestionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     status: Literal["completed", "failed"]
