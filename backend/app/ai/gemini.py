@@ -1,6 +1,12 @@
 """Small Gemini HTTP abstraction; it is never called from a route handler."""
 
+import time
+
 import httpx
+
+
+RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
+RETRY_BACKOFF_SECONDS = (0.25, 0.5)
 
 
 class GeminiConfigurationError(Exception): pass
@@ -46,27 +52,45 @@ class GeminiProvider:
     def generate_summary(self, prompt: str) -> str:
         if not self.api_key:
             raise GeminiConfigurationError("Gemini is not configured")
-        try:
-            response = httpx.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent",
-                params={"key": self.api_key},
-                json={
-                    "contents": [{"parts": [{"text": prompt}]}],
-                    "generationConfig": {
-                        "responseMimeType": "application/json",
-                        "responseJsonSchema": AI_SUMMARY_RESPONSE_JSON_SCHEMA,
+        for attempt in range(len(RETRY_BACKOFF_SECONDS) + 1):
+            try:
+                response = httpx.post(
+                    f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent",
+                    params={"key": self.api_key},
+                    json={
+                        "contents": [{"parts": [{"text": prompt}]}],
+                        "generationConfig": {
+                            "responseMimeType": "application/json",
+                            "responseJsonSchema": AI_SUMMARY_RESPONSE_JSON_SCHEMA,
+                        },
                     },
-                },
-                timeout=self.timeout_seconds,
-            )
-            response.raise_for_status()
-            return self._usable_text(response.json())
-        except httpx.TimeoutException as error:
-            raise GeminiProviderError("provider_timeout") from error
-        except httpx.HTTPError as error:
-            raise GeminiProviderError("provider_http") from error
-        except (KeyError, IndexError, TypeError, ValueError) as error:
-            raise GeminiProviderError("provider_response_shape") from error
+                    timeout=self.timeout_seconds,
+                )
+                if response.status_code in RETRYABLE_STATUS_CODES and self._retry(attempt):
+                    continue
+                response.raise_for_status()
+                return self._usable_text(response.json())
+            except httpx.TimeoutException as error:
+                if self._retry(attempt):
+                    continue
+                raise GeminiProviderError("provider_timeout") from error
+            except httpx.NetworkError as error:
+                if self._retry(attempt):
+                    continue
+                raise GeminiProviderError("provider_http") from error
+            except httpx.HTTPError as error:
+                raise GeminiProviderError("provider_http") from error
+            except (KeyError, IndexError, TypeError, ValueError) as error:
+                raise GeminiProviderError("provider_response_shape") from error
+
+        raise AssertionError("Gemini retry loop exited unexpectedly")
+
+    @staticmethod
+    def _retry(attempt: int) -> bool:
+        if attempt >= len(RETRY_BACKOFF_SECONDS):
+            return False
+        time.sleep(RETRY_BACKOFF_SECONDS[attempt])
+        return True
 
     @staticmethod
     def _usable_text(data: object) -> str:

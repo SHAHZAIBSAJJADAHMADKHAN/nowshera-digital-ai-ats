@@ -1,6 +1,7 @@
 import json
 from uuid import UUID
 
+import httpx
 import pytest
 
 from app.ai.pdf_extraction import PDFExtractionError, extract_pdf_text
@@ -33,7 +34,7 @@ def valid_result():
 
 class Client:
     def __init__(self, content=None):
-        self.content = content or pdf_with_text(); self.saved=[]; self.requested=[]
+        self.content = content or pdf_with_text(); self.saved=[]; self.requested=[]; self.stage="applied"
     def resolve_ai_work_item(self, application_id):
         self.requested.append(application_id)
         return {"id": application_id, "job_id":"job-1", "cv_id":"original-cv", "job_title":"Engineer", "job_requirements":"Python", "cv_storage_path":"candidates/candidate/original.pdf", "cv_filename":"original.pdf", "cv_mime_type":"application/pdf", "cv_file_size_bytes":len(self.content)}
@@ -51,6 +52,7 @@ class Provider:
 
 
 class GeminiResponse:
+    status_code = 200
     def __init__(self, payload): self.payload = payload
     def raise_for_status(self): pass
     def json(self): return self.payload
@@ -58,6 +60,11 @@ class GeminiResponse:
 
 def gemini_payload(parts):
     return {"candidates": [{"content": {"parts": parts}}]}
+
+
+def http_response(status_code, payload=None):
+    request = httpx.Request("POST", "https://example.invalid/gemini")
+    return httpx.Response(status_code, request=request, json=payload or {})
 
 
 def test_gemini_provider_accepts_normal_first_text_and_sends_strict_json_schema(monkeypatch):
@@ -97,6 +104,61 @@ def test_gemini_provider_maps_timeout_without_exposing_request_details(monkeypat
     assert error.value.category == "provider_timeout"
 
 
+def test_gemini_provider_retries_503_then_returns_a_valid_result(monkeypatch):
+    responses = [http_response(503), http_response(200, gemini_payload([{"text": valid_result()}]))]
+    sleeps = []
+    monkeypatch.setattr("app.ai.gemini.httpx.post", lambda *_, **__: responses.pop(0))
+    monkeypatch.setattr("app.ai.gemini.time.sleep", sleeps.append)
+    assert GeminiProvider("synthetic-key", "gemini-3.6-flash").generate_summary("safe prompt") == valid_result()
+    assert sleeps == [0.25]
+
+
+def test_gemini_provider_retries_429_then_returns_a_valid_result(monkeypatch):
+    responses = [http_response(429), http_response(200, gemini_payload([{"text": valid_result()}]))]
+    sleeps = []
+    monkeypatch.setattr("app.ai.gemini.httpx.post", lambda *_, **__: responses.pop(0))
+    monkeypatch.setattr("app.ai.gemini.time.sleep", sleeps.append)
+    assert GeminiProvider("synthetic-key", "gemini-3.6-flash").generate_summary("safe prompt") == valid_result()
+    assert sleeps == [0.25]
+
+
+def test_gemini_provider_retries_a_transient_timeout_then_returns_a_valid_result(monkeypatch):
+    responses = [httpx.ReadTimeout("temporary provider timeout"), http_response(200, gemini_payload([{"text": valid_result()}]))]
+    sleeps = []
+    def post(*_, **__):
+        response = responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
+    monkeypatch.setattr("app.ai.gemini.httpx.post", post)
+    monkeypatch.setattr("app.ai.gemini.time.sleep", sleeps.append)
+    assert GeminiProvider("synthetic-key", "gemini-3.6-flash").generate_summary("safe prompt") == valid_result()
+    assert sleeps == [0.25]
+
+
+def test_gemini_provider_exhausts_transient_retries_and_processing_stays_safe(monkeypatch):
+    calls, sleeps = [], []
+    monkeypatch.setattr("app.ai.gemini.httpx.post", lambda *_, **__: calls.append(None) or http_response(503))
+    monkeypatch.setattr("app.ai.gemini.time.sleep", sleeps.append)
+    client = Client()
+    AIProcessingService(client, GeminiProvider("synthetic-key", "gemini-3.6-flash")).process(APP)
+    assert len(calls) == 3
+    assert sleeps == [0.25, 0.5]
+    assert client.saved == [(str(APP), "failed", None, None, None, None, "AI summary processing is unavailable")]
+    assert client.stage == "applied"
+
+
+def test_gemini_provider_does_not_retry_non_transient_http_errors(monkeypatch):
+    calls, sleeps = [], []
+    monkeypatch.setattr("app.ai.gemini.httpx.post", lambda *_, **__: calls.append(None) or http_response(400))
+    monkeypatch.setattr("app.ai.gemini.time.sleep", sleeps.append)
+    with pytest.raises(GeminiProviderError) as error:
+        GeminiProvider("synthetic-key", "gemini-3.6-flash").generate_summary("safe prompt")
+    assert error.value.category == "provider_http"
+    assert len(calls) == 1
+    assert sleeps == []
+
+
 def test_extracts_valid_pdf_text_and_rejects_bad_or_empty_pdf():
     assert "Python API testing" in extract_pdf_text(pdf_with_text())
     with pytest.raises(PDFExtractionError): extract_pdf_text(b"not a pdf")
@@ -113,6 +175,7 @@ def test_exact_application_cv_is_resolved_and_newer_upload_is_not_used():
     assert client.requested == [str(APP)]
     assert "original.pdf" not in provider.prompts[0]  # only text is sent, never a browser CV selection.
     assert client.saved[0][1] == "completed"
+    assert client.stage == "applied"
 
 
 def test_processing_failure_is_safe_and_does_not_change_stage_or_send_email():
